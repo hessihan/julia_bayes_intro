@@ -1,0 +1,1 @@
+# https://stats.stackexchange.com/questions/155239/marginal-effects-from-bayesian-probit
