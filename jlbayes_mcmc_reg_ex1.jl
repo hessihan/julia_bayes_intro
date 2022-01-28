@@ -52,8 +52,9 @@ n_chains = 4
 n_tune = 1_000
 # sample(model, sampler, parallel_type, n, n_chains)
 # chain = sample(model, NUTS(), MCMCThreads(), n_draws, n_chains, discard_initial=n_tune)
-# How to implement burn-in / warmup?
+# How to implement burn-in / warmup? --> discard initial value automatically. ; discard_adapt=false to turn off
 chn = sample(model, NUTS(), MCMCThreads(), n_draws, n_chains)
+chn = sample(model, NUTS(), MCMCThreads(), n_draws, n_chains; discard_adapt=false)
 
 # Chain info.
 typeof(chn)

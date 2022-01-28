@@ -7,6 +7,10 @@ using Random
 using LinearAlgebra
 using StatsPlots
 using MCMCChains
+using DataFrames
+using Printf
+# using Plots # reesport
+# using Statistics # reesport
 
 using StatsFuns: logistic, logit
 
@@ -47,7 +51,8 @@ end
 model = logit_model(X, y)
 
 n_draws = 5_000
-n_chains = 4
+# n_chains = 4
+n_chains = 1
 n_tune = 1_000
 chn = sample(model, NUTS(), MCMCThreads(), n_draws, n_chains)
 # chn = sample(model, NUTS(), MCMCThreads(), n_draws, n_chains)[n_tune:n_draws, :, :]
@@ -58,7 +63,7 @@ summarize(β_chn)
 quantile(β_chn)
 plot(β_chn)
 
-# Marginal effect 
+# Marginal effect 限界効果
 # https://cran.r-project.org/web/packages/margins/vignettes/Introduction.html
 # https://turinglang.github.io/MCMCChains.jl/dev/chains/
 # https://docs.juliahub.com/MCMCChains/QRkwo/3.0.12/
@@ -93,7 +98,7 @@ function marginal_effect_logit(β_chn, β_interest, x)
     return dydxs
 end
 
-rand_margins = marginal_effect_logit(β_chn, Symbol("β[2]"), X[6, :])
+rand_margins = marginal_effect_logit(β_chn, Symbol("β[2]"), X[100, :])
 density(rand_margins)
 
 """
@@ -102,8 +107,88 @@ Average Marginal Effect of all sample.
 function marginal_effect_logit_mae(β_chn, β_interest, X)
     # https://discourse.julialang.org/t/converting-a-matrix-into-an-array-of-arrays/17038/7
     # https://discourse.julialang.org/t/how-to-broadcast-over-only-certain-function-arguments/19274
-    mean(marginal_effect_logit.((β_chn,), (β_interest,), [r for r in eachrow(X)]))
+    return mean(marginal_effect_logit.((β_chn,), (β_interest,), [r for r in eachrow(X)]))
 end
 
 rand_mae = marginal_effect_logit_mae(β_chn, Symbol("β[2]"), X)
 density(rand_mae)
+
+
+marginal_effect_logit.((β_chn,), (Symbol("β[2]"),), [r for r in eachrow(X)])
+
+step = 0.5
+interest_dim = findall(x -> x == Symbol("β[2]"), names(β_chn))
+other_dim = findall(x -> x != Symbol("β[2]"), names(β_chn))
+x_interest = X[:, interest_dim]
+# https://stackoverflow.com/questions/37661221/julia-select-all-but-one-element-in-array-matrix
+x_other = X[:, 1:end .!= interest_dim]
+x_interest_theoritical = Vector(minimum(x_interest):step:maximum(x_interest))
+x_interest_theoritical
+# Average other x
+X_theoritical_ames = []
+for x in x_interest_theoritical
+    print(x)
+    print("\n")
+    X_theoritical_ame = copy(X)
+    X_theoritical_ame[:, interest_dim] .= x
+    push!(X_theoritical_ames, X_theoritical_ame)
+end
+marginal_effect_logit_mae.((β_chn,), (Symbol("β[2]"),), X_theoritical_ames)
+
+
+# Plot Marginal Effect regarding to different value of X_j in interest
+"""
+Margins plot
+
+Plot Marginal Effect regarding to different value of X_j in interest
+# https://docs.julialang.org/en/v1/manual/functions/#Optional-Arguments
+# https://docs.julialang.org/en/v1/manual/functions/#Keyword-Arguments
+"""
+function plot_marginal_effect(β_chn::Chains, β_interest::Symbol, x_interest_theoritical::Vector; at_mean::Bool=false, ci_p::Float64=0.95)
+    interest_dim = findall(x -> x == β_interest, names(β_chn))
+    other_dim = findall(x -> x != β_interest, names(β_chn))
+    x_interest = X[:, interest_dim]
+    # https://stackoverflow.com/questions/37661221/julia-select-all-but-one-element-in-array-matrix
+    x_other = X[:, 1:end .!= interest_dim]
+    # x_interest_theoritical = Vector(minimum(x_interest):step:maximum(x_interest))
+
+    if at_mean
+        # at mean other x
+        X_theoritical_atmean = Matrix{Float64}(undef, size(x_interest_theoritical, 1), length(names(β_chn)))
+        X_theoritical_atmean[:, interest_dim] = x_interest_theoritical
+        for other in other_dim
+            X_theoritical_atmean[:, other] .= mean(X, dims=1)[other]
+        end
+        rand_margins = marginal_effect_logit.((β_chn,), (β_interest,), [r for r in eachrow(X_theoritical_atmean)])
+        ylabel = @sprintf("Marginal Effect at Means, CI(%d)", ci_p*100)
+    else
+        # Average other x
+        X_theoritical_ames = []
+        for x in x_interest_theoritical
+            X_theoritical_ame = copy(X)
+            X_theoritical_ame[:, interest_dim] .= x
+            push!(X_theoritical_ames, X_theoritical_ame)
+        end
+        rand_margins = marginal_effect_logit_mae.((β_chn,), (β_interest,), X_theoritical_ames)
+        ylabel = @sprintf("Average Marginal Effect, CI(%d)", ci_p*100)
+    end
+
+    # margins plot
+    # https://discourse.julialang.org/t/asymmetric-error-bars-and-box-plots-in-julia/73647/2
+    rand_margins_median = median.(rand_margins)
+    ci_lower = quantile.(rand_margins, (1-ci_p)/2)
+    ci_upper = quantile.(rand_margins, ci_p-(1-ci_p)/2)
+    plot(x_interest_theoritical, rand_margins_median, color="black", xlabel=@sprintf("%s's x", β_interest), ylabel=ylabel,  legend=false)
+    display(scatter!(x_interest_theoritical, rand_margins_median, yerror=(ci_lower, ci_upper), color="cornflowerblue"))
+
+    return rand_margins
+end
+
+x_hypo = Vector(-2.0:0.5:3.5)
+
+plot_marginal_effect(β_chn, Symbol("β[2]"), x_hypo, at_mean=false)
+plot_marginal_effect(β_chn, Symbol("β[2]"), x_hypo, at_mean=true)
+plot_marginal_effect(β_chn, Symbol("β[2]"), x_hypo, at_mean=true, ci_p=0.5)
+
+plot_marginal_effect(β_chn, Symbol("β[3]"), x_hypo, at_mean=false)
+plot_marginal_effect(β_chn, Symbol("β[3]"), x_hypo, at_mean=true)
