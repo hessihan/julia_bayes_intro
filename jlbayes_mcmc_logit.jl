@@ -180,7 +180,6 @@ function plot_marginal_effect(β_chn::Chains, β_interest::Symbol, x_interest_th
     ci_upper = quantile.(rand_margins, ci_p-(1-ci_p)/2)
     plot(x_interest_theoritical, rand_margins_median, color="black", xlabel=@sprintf("%s's x", β_interest), ylabel=ylabel,  legend=false)
     display(scatter!(x_interest_theoritical, rand_margins_median, yerror=(ci_lower, ci_upper), color="cornflowerblue"))
-
     return rand_margins
 end
 
